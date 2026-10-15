@@ -7,11 +7,12 @@ import numpy as np
 from ..config import STEM_NAMES
 
 BLOCKS = "▁▂▃▄▅▆▇█"
+MAX_PATTERNS = 6
 STEM_LABEL = {"vocals": "Vocals", "drums": "Drums", "bass": "Bass", "other": "Other (pads, keys, guitars, fx)"}
 
 
 def ts(t: float) -> str:
-    m, s = divmod(max(float(t), 0.0), 60)
+    m, s = divmod(round(max(float(t), 0.0), 1), 60)
     return f"{int(m)}:{s:04.1f}"
 
 
@@ -59,7 +60,7 @@ def render(analysis: dict, curves: dict, name: str) -> str:
     # timeline
     secs = analysis.get("sections")
     if secs:
-        L += ["## Timeline", "", "| Time | Bars | Character | Energy | Active stems | Notes |", "|---|---|---|---|---|---|"]
+        L += ["## Timeline", "", "| Time | Bars | Character | Energy | Active stems | Description |", "|---|---|---|---|---|---|"]
         for s in secs:
             stems = ", ".join(s.get("active_stems", [])) or "-"
             L.append(f"| {ts(s['start'])}–{ts(s['end'])} | {s['bars'][0]}–{s['bars'][1]} | **{s.get('character', '?')}** "
@@ -108,12 +109,16 @@ def render(analysis: dict, curves: dict, name: str) -> str:
         L += ["## Drum patterns (estimated)", "",
               f"{c.get('kick', 0)} kicks, {c.get('snare', 0)} snares, {c.get('hat', 0)} hats detected. "
               "One character per 16th note, `x` = hit:", "", "```"]
-        for p in hits["patterns"][:8]:
+        pats = hits["patterns"]
+        if len(pats) > MAX_PATTERNS:  # keep the patterns that run longest (the main grooves), in time order
+            longest = sorted(pats, key=lambda p: p["bars"][1] - p["bars"][0], reverse=True)[:MAX_PATTERNS]
+            pats = sorted(longest, key=lambda p: p["bars"][0])
+        for p in pats:
             label = f"bars {p['bars'][0]}–{p['bars'][1]}" if p["bars"][0] != p["bars"][1] else f"bar {p['bars'][0]}"
             for i, h in enumerate(("kick", "snare", "hat")):
                 L.append(f"{label if i == 0 else '':<12} {h:<5} {p[h]}")
-        if len(hits["patterns"]) > 8:
-            L.append(f"... {len(hits['patterns']) - 8} more pattern changes in analysis.json")
+        if len(hits["patterns"]) > len(pats):
+            L.append(f"... {len(hits['patterns']) - len(pats)} shorter patterns (fills, builds) in analysis.json")
         L += ["```", ""]
 
     # harmony

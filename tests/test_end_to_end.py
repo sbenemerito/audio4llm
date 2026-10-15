@@ -139,6 +139,10 @@ def test_section_boundaries(analysis, ground_truth):
     found = sum(any(abs(s - t) <= 2.0 for s in starts) for t in truth)  # within one bar
     assert found >= len(truth) - 1, (starts, truth)
     assert len(analysis["sections"]) <= 8
+    for s in analysis["sections"]:  # bar ranges agree with the true bar numbering (within one bar)
+        near = [g for g in ground_truth["sections"] if abs(g["start"] - s["start"]) <= 2.0]
+        if near:
+            assert abs(s["bars"][0] - near[0]["first_bar"]) <= 1, (s, near[0])
 
 
 def test_section_characters(analysis):

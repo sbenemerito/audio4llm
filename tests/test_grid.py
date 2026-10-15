@@ -72,3 +72,10 @@ def test_bars_and_tempo():
     assert bars[0] == {"bar": 1, "start": pytest.approx(0.1), "end": pytest.approx(2.1), "beats": 4}
     assert grid.tempo_bpm == pytest.approx(120.0)
     assert grid.nearest_bar_start(4.0) == pytest.approx(4.1)
+
+
+def test_bar_range_of_bar_aligned_span():
+    beats = steady(t0=0.04)  # bars start at 0.04, 2.04, 4.04, ...
+    grid = BeatGrid.from_tracker(beats, beats[::4])
+    assert grid.bar_range(0.0, 4.044) == (1, 2)  # edges a few ms off the bar lines
+    assert grid.bar_range(4.04, 8.03) == (3, 4)

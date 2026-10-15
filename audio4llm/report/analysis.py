@@ -43,9 +43,6 @@ class Locator:
     def bar(self, t: float) -> int:
         return self.grid.locate(t)[0]
 
-    def last_bar(self, end: float) -> int:
-        """Bar containing the instant just before `end` (for inclusive bar ranges)."""
-        return self.grid.locate(max(end - 1e-3, 0.0))[0]
 
 
 # ---- per-beat and dense curves ------------------------------------------------------
@@ -128,8 +125,8 @@ def build_sections(sections: dict | None, loc: Locator) -> list[dict] | None:
         return None
     out = []
     for i, s in enumerate(sections.get("sections", [])):
-        item = {"index": i, "start": r3(s["start"]), "end": r3(s["end"]),
-                "bars": [loc.bar(s["start"]), loc.last_bar(s["end"])]}
+        bars = s.get("bars") or list(loc.grid.bar_range(s["start"], s["end"]))
+        item = {"index": i, "start": r3(s["start"]), "end": r3(s["end"]), "bars": bars}
         item.update({k: v for k, v in s.items() if k not in ("start", "end", "bars")})
         out.append(item)
     return out
@@ -186,8 +183,7 @@ def build_hits(hits: dict | None, grid: BeatGrid, loc: Locator) -> dict | None:
             p = loc(h["t"])
             rows[h["type"]].append([p["t"], p["bar"], p["beat"], r2(h.get("strength", 1.0))])
     return {
-        "about": "Estimated from the drum stem: " + hits.get("method", "band-split onset detection")
-                 + ". Rows are [t, bar, beat, strength 0..1].",
+        "about": hits.get("method", "estimate from the drum stem") + ". Rows are [t, bar, beat, strength 0..1].",
         "columns": ["t", "bar", "beat", "strength"],
         "counts": {h: len(v) for h, v in rows.items()},
         **rows,

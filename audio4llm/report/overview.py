@@ -109,7 +109,7 @@ def render(analysis: dict, curves: dict, input_wav: Path, out_path: Path, title:
     ax_wave.set_title(title, loc="left", fontsize=12, color=INK, pad=6)
     g = analysis["global"]
     key = (g.get("key") or {}).get("label")
-    sub = f"{g.get('tempo_bpm')} BPM · {g.get('time_signature')} · " + (f"key ≈ {key} · " if key else "") + \
+    sub = f"{g.get('tempo_bpm') or 0:.1f} BPM · {g.get('time_signature')} · " + (f"key ≈ {key} · " if key else "") + \
           f"{g['loudness'].get('integrated_lufs')} LUFS · thin vertical lines = downbeats, ticks at top = beats"
     ax_wave.text(1.0, 1.02, sub, transform=ax_wave.transAxes, ha="right", va="bottom", fontsize=8.5, color=INK_2)
     ax_wave.set_ylabel("waveform", rotation=0, ha="right", va="center")

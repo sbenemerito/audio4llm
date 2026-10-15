@@ -197,7 +197,7 @@ def build(with_vocals: bool, voice: str) -> tuple[np.ndarray, dict]:
         elif sec == "build":
             for k in range(16):
                 t = t0 + k * BEAT / 4
-                if t >= DURATION / 2 - 0.5 and bar == 16:  # stop before the drop
+                if bar == 16 and t >= bar_t(17) - BEAT:  # stop before the drop
                     continue
                 drums.add(t, H, (0.06 + 0.10 * build_pos) * (1.0 if k % 2 == 0 else 0.6), pan=0.3)
                 hits["hat"].append(t)

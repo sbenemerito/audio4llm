@@ -216,6 +216,12 @@ class BeatGrid:
         bar, pos = self._label(j)
         return bar, round(pos + frac, 2)
 
+    def bar_range(self, start: float, end: float) -> tuple[int, int]:
+        """First and last bar of a span whose edges sit (roughly) on bar lines; no snapping involved."""
+        first = int(np.floor(self.beat_position(float(start)) + 0.25))
+        last = int(np.floor(self.beat_position(float(end)) - 0.25))
+        return self._label(first)[0], self._label(max(last, first))[0]
+
     def nearest_bar_start(self, t: float) -> float:
         starts = self.bar_starts()
         if len(starts) == 0:
