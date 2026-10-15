@@ -22,7 +22,7 @@ These apply everywhere (they are also embedded in the file under `conventions`):
 | `beat` | 1-based position in the bar. In `grid.beats` it is an integer. On events it is fractional, with 2 decimals: `1.0` is the downbeat, `2.5` is halfway between beats 2 and 3, and `4.99` is just before the next bar. |
 | energy (0..1) | Relative to this clip. It is linear in dB over the top 30 dB of each stem: 1.0 is that stem's loudest level (its 99th percentile), 0.0 is 30 dB or more below it. A stem that is nearly silent throughout is referenced to the mix instead, so its values stay near 0 rather than being stretched up to 1. |
 | estimates | Key, drum-hit types, note transcriptions, section characters and moments come from heuristics or models and can be wrong. Each one says so in its `about`/`method` text. |
-| `null` | A part whose stage failed or was skipped is `null`; the reason is in `meta.warnings`. |
+| `null` | A top-level part is `null` only when its stage **failed**; the reason is in `meta.warnings`. A part with nothing to report is still an object: lyrics for an instrumental have `status: "skipped"`, and `hits` with no drums has empty arrays and zero counts. |
 
 ## analysis.json
 
@@ -49,7 +49,7 @@ Top-level keys, in file order:
 | Field | Type | Description |
 |-------|------|-------------|
 | `file` | string | absolute path of the original input file |
-| `input_wav` | string | path of the analysed audio. Play this, or mux it into the video. |
+| `input_wav` | string | absolute path of the analysed audio. Play this, or mux it into the video. |
 | `start_offset` | number | `--start` used for trimming, in seconds into `file` (0 if none) |
 | `duration` | number | length of `input_wav` in seconds |
 | `sample_rate` | int | 44100 |
@@ -77,8 +77,11 @@ Top-level keys, in file order:
 | `bars` | array of `{bar, start, end}` | bar 0 (a pickup) only appears if there is one; the last bar ends one beat after its last beat, clipped to the clip end |
 
 The downbeats come from beat_this. When the spacing makes it unambiguous, downbeats it skipped are filled in:
-a gap of exactly 2 or more bars, beats after the last downbeat, and a lead-in longer than one bar. Beats are
-detected on the full mix, at 50 frames/s, so expect about ±20 ms of jitter.
+a gap of exactly 2 or more bars, beats after the last downbeat, and a lead-in longer than one bar. beat_this
+works on 20 ms frames, so each beat is then moved to the strongest mix onset within ±40 ms, when there is a
+clear one. On percussive material that puts beats within a few ms of the transient (median 5 ms on the test
+clip). In passages with no transients, beats keep the tracker's ±20–50 ms error. With no steady pulse at all,
+`beats` and `bars` are empty and every event is placed in bar 1.
 
 ### `sections`
 
@@ -143,12 +146,16 @@ separately.
 |-------|------|-------------|
 | `about` | string | how the hits were estimated |
 | `columns` | array | `["t", "bar", "beat", "strength"]`: the layout of each row below |
-| `counts` | object | `{kick, snare, hat}` counts |
+| `counts` | object | `{kick, snare, hat, onsets}` counts |
 | `kick`, `snare`, `hat` | array of rows | `[t, bar, beat, strength]`; strength is 0..1 within that type in this clip |
+| `onsets_about` | string | how to read `onsets` |
+| `onsets` | array of rows | `[t, bar, beat]` for every drum-stem onset, typed or not (toms, claps and fills included). Use it for "any drum hit" effects. |
 | `patterns_about` | string | how to read `patterns` |
 | `patterns` | array of `{bars: [first, last], kick, snare, hat}` | one character per 16th note (`x` = hit, `.` = none), so a 4/4 bar is 16 characters. Consecutive bars with identical patterns are merged into one entry. Bars without any hits are omitted. |
 
 Rows are used instead of objects to keep the file compact: a busy 80 s clip can have more than 600 hits.
+Hits and onsets are only kept where the drum stem is active (see `stems.drums.active`), so Demucs bleed on
+drum-less material doesn't turn into phantom kicks.
 
 ### `stems`
 
@@ -175,22 +182,22 @@ which are normalised per band.
 | `backend` | string | `"coreml"` or `"onnx"` (Basic Pitch runtime actually used) |
 | `columns` | array | `["t", "bar", "beat", "dur", "midi", "name", "velocity"]` |
 | `bass`, `vocals` | array of rows | `[t, bar, beat, duration_s, midi, name, velocity]`. `name` uses ASCII sharps (`"C#3"`). `velocity` is 1..127, from Basic Pitch's amplitude. |
-| `vocals_note` | string, optional | why vocal notes are missing (for example, no vocals) |
+| `<stem>_note` | string, optional | why that stem's notes are missing or empty, e.g. `vocals_note: "no vocals"` |
 | `per_bar_about` | string | how to read `per_bar` |
 | `per_bar` | array of `{bar, bass?, vocals?, bass_root?}` | note names that start in each bar, in order with repeats collapsed (`"A2 C3"`); `bass_root` is the bass pitch class held longest in that bar |
 
 Notes are gated to the stem's active regions, which removes bleed. Bass notes are filtered for harmonic
 ghosts: a note an octave, twelfth, two octaves, and so on above a stronger, overlapping lower note is
-dropped. Note `dur` tends to run on to the next onset, so sync visuals to `t`. The raw Basic Pitch output is
-also written to `cache/bass.mid` and `cache/vocals.mid`.
+dropped. Note `dur` tends to run on to the next onset, so sync visuals to `t`. The kept notes, after
+gating and filtering, are also written to `cache/bass.mid` and `cache/vocals.mid`.
 
 ### `lyrics`
 
 | Field | Type | Description |
 |-------|------|-------------|
 | `status` | string | `"ok"`, `"skipped"` (no vocals) or `"empty"` (vocals present, but nothing reliable was transcribed) |
-| `reason` | string, optional | why it is not `ok` |
-| `language` | string | ISO code |
+| `reason` | string or null | why it is not `ok` (null when it is) |
+| `language` | string or null | ISO code (null when skipped) |
 | `model` | string | Whisper model repo |
 | `lines` | array | `{start, end, bar, beat, text, words}` |
 | `lines[].words` | array | `{w, start, end, bar, beat}`. `w` keeps Whisper's punctuation (`"night,"`). `bar`/`beat` are at the word's start. |
@@ -235,7 +242,8 @@ Curves, all aligned to `t = i / hz` and each summarising the window `t ± 0.5/hz
 | `onset` | 0..1 | transient strength of the mix (window maximum) |
 | `drums_low`, `drums_mid`, `drums_high` | 0..1 | drum-stem band envelopes (window maximum): roughly kick, snare and hats. Good for pumping on hits without triggering on discrete events. |
 
-To sample at an arbitrary time `t`: `i = round(t * hz)`, then interpolate linearly between `i` and `i + 1`.
+To sample at an arbitrary time `t`: `x = t * hz`, `i = floor(x)`, then interpolate linearly between samples
+`i` and `i + 1` with weight `x - i`. Clamp `i` to `n - 2`.
 
 ## Example
 
@@ -266,7 +274,7 @@ the absolute paths in `source` are shortened. Everything else is verbatim. Regen
   },
   "global": {
     "tempo_bpm": 119.97,
-    "tempo_std_bpm": 0.66,
+    "tempo_std_bpm": 0.59,
     "time_signature": "4/4",
     "beats_per_bar": 4,
     "beat_count": 160,
@@ -284,16 +292,16 @@ the absolute paths in `source` are shortened. Everything else is verbatim. Regen
   },
   "grid": {
     "beats": [
-      {"t": 0.04, "bar": 1, "beat": 1, "is_downbeat": true},
-      {"t": 0.504, "bar": 1, "beat": 2, "is_downbeat": false},
-      {"t": 1.008, "bar": 1, "beat": 3, "is_downbeat": false},
-      {"t": 1.507, "bar": 1, "beat": 4, "is_downbeat": false},
+      {"t": 0.005, "bar": 1, "beat": 1, "is_downbeat": true},
+      {"t": 0.509, "bar": 1, "beat": 2, "is_downbeat": false},
+      {"t": 1.007, "bar": 1, "beat": 3, "is_downbeat": false},
+      {"t": 1.506, "bar": 1, "beat": 4, "is_downbeat": false},
       {"t": 2.005, "bar": 2, "beat": 1, "is_downbeat": true},
       {"t": 2.504, "bar": 2, "beat": 2, "is_downbeat": false},
       "… 154 more"
     ],
     "bars": [
-      {"bar": 1, "start": 0.04, "end": 2.005},
+      {"bar": 1, "start": 0.005, "end": 2.005},
       {"bar": 2, "start": 2.005, "end": 4.006},
       {"bar": 3, "start": 4.006, "end": 6.006},
       "… 37 more"
@@ -303,7 +311,7 @@ the absolute paths in `source` are shortened. Everything else is verbatim. Regen
     {
       "index": 0,
       "start": 0.0,
-      "end": 16.004,
+      "end": 16.003,
       "bars": [1, 8],
       "character": "sparse",
       "energy": 0.35,
@@ -316,7 +324,7 @@ the absolute paths in `source` are shortened. Everything else is verbatim. Regen
     },
     {
       "index": 1,
-      "start": 16.004,
+      "start": 16.003,
       "end": 32.002,
       "bars": [9, 16],
       "character": "build",
@@ -426,18 +434,30 @@ the absolute paths in `source` are shortened. Everything else is verbatim. Regen
     {"t": 71.99, "bar": 37, "beat": 1.0, "type": "bass_in", "description": "bass comes in", "strength": 0.81}
   ],
   "hits": {
-    "about": "estimate: drum-stem STFT split into low 30-150 Hz (kick) / mid 1-5 kHz (snare) / high 6-16 kHz (hat) bands; per-band onset peaks gated by level, with rules against bass bleed, kick-click and snare-noise leakage. Rows are [t, bar, beat, strength 0..1].",
+    "about": "estimate: drum-stem STFT split into low 30-150 Hz (kick) / mid 1-5 kHz (snare) / high 6-16 kHz (hat) bands; per-band onset peaks gated by level, with rules against bass bleed, kick-click and snare-noise leakage. Rows are [t, bar, beat, strength 0..1]. Only counted where the drum stem is active.",
     "columns": ["t", "bar", "beat", "strength"],
-    "counts": {"kick": 64, "snare": 92, "hat": 229},
+    "counts": {"kick": 64, "snare": 92, "hat": 229, "onsets": 286},
     "kick": [[32.0, 17, 1.0, 1.0], [32.5, 17, 2.0, 1.0], [33.0, 17, 3.0, 1.0], [33.5, 17, 4.0, 1.0], "… 60 more"],
     "snare": [[16.0, 9, 1.0, 0.63], [16.5, 9, 2.0, 0.63], [17.0, 9, 3.0, 0.63], "… 89 more"],
-    "hat": [[0.01, 0, 4.94, 0.51], [0.25, 1, 1.5, 0.4], [0.5, 1, 2.0, 0.51], "… 226 more"],
+    "hat": [[0.01, 1, 1.0, 0.51], [0.25, 1, 1.5, 0.4], [0.5, 1, 2.0, 0.51], "… 226 more"],
+    "onsets_about": "every drum-stem onset as [t, bar, beat], typed or not (toms, claps, fills included): use it for 'any drum hit' effects",
+    "onsets": [
+      [0.01, 1, 1.0],
+      [0.25, 1, 1.5],
+      [0.5, 1, 2.0],
+      [0.75, 1, 2.5],
+      [1.0, 1, 3.0],
+      [1.25, 1, 3.5],
+      [1.5, 1, 4.0],
+      [1.75, 1, 4.5],
+      "… 278 more"
+    ],
     "patterns_about": "One character per 16th note (x = hit), 16 per bar; consecutive bars with the same pattern are merged into one entry.",
     "patterns": [
-      {"bars": [1, 1], "kick": "................", "snare": "................", "hat": "..x.x.x.x.x.x.x."},
-      {"bars": [2, 8], "kick": "................", "snare": "................", "hat": "x.x.x.x.x.x.x.x."},
+      {"bars": [1, 8], "kick": "................", "snare": "................", "hat": "x.x.x.x.x.x.x.x."},
       {"bars": [9, 9], "kick": "................", "snare": "x...x...x...x...", "hat": ".xxxxxxxxxxxxxxx"},
-      "… 7 more"
+      {"bars": [10, 11], "kick": "................", "snare": "x...x...x...x...", "hat": "..xx..xx..xx..xx"},
+      "… 6 more"
     ]
   },
   "stems": {
@@ -447,14 +467,14 @@ the absolute paths in `source` are shortened. Everything else is verbatim. Regen
       "per_beat": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, "… 152 more"],
       "active": [
         {"start": 36.03, "end": 38.45, "bar": 19, "beat": 1.0, "end_bar": 20, "end_beat": 1.9},
-        {"start": 59.98, "end": 62.49, "bar": 30, "beat": 4.85, "end_bar": 32, "end_beat": 2.0}
+        {"start": 59.98, "end": 62.49, "bar": 30, "beat": 4.86, "end_bar": 32, "end_beat": 2.0}
       ],
       "active_fraction": 0.06
     },
     "drums": {
       "per_beat": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, "… 152 more"],
       "active": [
-        {"start": 0.0, "end": 55.88, "bar": 0, "beat": 4.92, "end_bar": 28, "end_beat": 4.75},
+        {"start": 0.0, "end": 55.88, "bar": 1, "beat": 1.0, "end_bar": 28, "end_beat": 4.75},
         {"start": 71.96, "end": 79.88, "bar": 36, "beat": 4.91, "end_bar": 40, "end_beat": 4.75}
       ],
       "active_fraction": 0.8
@@ -468,8 +488,8 @@ the absolute paths in `source` are shortened. Everything else is verbatim. Regen
       "active_fraction": 0.4
     },
     "other": {
-      "per_beat": [0.59, 0.66, 0.68, 0.59, 0.58, 0.68, 0.66, 0.6, "… 152 more"],
-      "active": [{"start": 0.0, "end": 79.94, "bar": 0, "beat": 4.92, "end_bar": 40, "end_beat": 4.87}],
+      "per_beat": [0.58, 0.66, 0.68, 0.59, 0.58, 0.68, 0.66, 0.6, "… 152 more"],
+      "active": [{"start": 0.0, "end": 79.94, "bar": 1, "beat": 1.0, "end_bar": 40, "end_beat": 4.87}],
       "active_fraction": 1.0
     }
   },
@@ -495,6 +515,7 @@ the absolute paths in `source` are shortened. Everything else is verbatim. Regen
   },
   "lyrics": {
     "status": "ok",
+    "reason": null,
     "language": "en",
     "model": "mlx-community/whisper-large-v3-turbo",
     "lines": [

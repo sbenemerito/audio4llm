@@ -59,7 +59,7 @@ already exist and nothing it depends on has changed (see [Caching](#caching-and-
       └────────────────┼─────────────────────┘
                        ▼
              ┌──────────────────┐
-             │ 7 assemble       │  reads cache/ only, about 1 s, runs every time
+             │ 7 assemble       │  reads cache/ (+ input.wav for the plot), ~1 s, runs every time
              └────────┬─────────┘
                       ▼
    analysis.json · curves.json · summary.md · overview.png
@@ -126,7 +126,7 @@ Measured stage times for the 80 s test clip (M1 Pro, warm model caches, default 
 |---|---|---|---|---|---|---|---|---|
 | 0.2 s | 11.1 s (MPS) | 3.0 s | 1.8 s | <0.1 s | 6.5 s | 3.6 s | 1.6 s | **27.8 s** |
 
-On CPU, `stems` takes about 51 s instead of 11–13 s. `--demucs-model htdemucs_ft` runs four models, so expect
+On CPU, `stems` takes about 40–50 s instead of 11–13 s. `--demucs-model htdemucs_ft` runs four models, so expect
 roughly 4× the stems time. Most of the lyrics time is loading the 1.6 GB model.
 
 ---
@@ -144,8 +144,10 @@ audio4llm song.mp3 --whisper-model mlx-community/whisper-small-mlx   # lighter l
 audio4llm song.mp3 --curves-hz 30                   # curves.json at 30 Hz (only re-runs assemble)
 audio4llm song.mp3 --force-stage lyrics             # redo one stage (plus anything downstream of it)
 audio4llm song.mp3 --force                          # redo everything
-audio4llm runs/song                                 # re-run on an existing run folder (re-assembles outputs)
-audio4llm song.mp3 --device cpu                     # don't try MPS for Demucs / beat_this
+audio4llm runs/song                                 # re-run a run folder with the settings it was made with
+audio4llm runs/song --curves-hz 30                  # ...changing just one setting (only assemble re-runs)
+audio4llm song.mp3 --device cpu --force-stage stems --force-stage rhythm   # redo the torch stages on CPU
+audio4llm song.mp3 --no-plot                        # skip overview.png (--plot turns it back on)
 ```
 
 At the end the CLI prints a table showing which stages ran or came from cache, and how long each took:
@@ -153,9 +155,17 @@ At the end the CLI prints a table showing which stages ran or came from cache, a
 ```
 stage     status    seconds  note
 ingest    cached          -
-stems     ran          17.0  settings changed (demucs_model: 'htdemucs_ft' -> 'htdemucs')
+stems     ran          17.0  demucs_model: 'htdemucs_ft' -> 'htdemucs'
 ...
 ```
+
+Notes on the run folder and settings:
+
+- **Folder name.** The run folder is named after the input file (`song.mp3` → `runs/song/`, lower-cased and slugified). `song.mp3` and `song.m4a` therefore share a folder: analysing one after the other re-runs everything. Use `--name` to keep them apart.
+- **Settings with a file input.** The settings are what the flags say, with defaults for any flag you leave out. Changing a setting re-runs only the stages that depend on it.
+- **Settings with a run folder** (`audio4llm runs/song`). The settings saved by its last run (`cache/config.json`) are re-used, and only the flags you pass change them. `--start` and `--duration` are ignored, because `input.wav` is already trimmed.
+- **`--device`** only affects stages that actually run. It is not part of the cache key, because it doesn't change the results, so add `--force-stage` to redo stages that are already cached.
+- **Minimum length.** Clips must be at least 2 s long. Inputs over 90 s are analysed, with a warning.
 
 Exit codes: `0` on success, `1` when a required stage failed, `2` when an optional stage failed (the outputs
 are still written).
@@ -173,7 +183,7 @@ analysis line up exactly, including when you used `--start`. A worked example is
 
 | File | For | What's in it |
 |------|-----|--------------|
-| `analysis.json` | the LLM | Compact and readable, about 20–60 KB. `global` (tempo, meter, key, loudness, vocals, language), `grid` (every beat with `t`, `bar`, `beat` and `is_downbeat`, plus bars), `sections` (character, energy, active stems), `moments` (drop, stop, vocal entry, ...), `hits` (kick/snare/hat rows plus 16th-note pattern strings), `stems` (per-beat energy arrays and active regions), `notes` (bass/vocal note rows plus a per-bar summary), `lyrics` (lines and words), and a pointer to `curves.json`. Every event carries `t`, `bar` and `beat`. |
+| `analysis.json` | the LLM | Compact and readable, about 20–60 KB. `global` (tempo, meter, key, loudness, vocals, language), `grid` (every beat with `t`, `bar`, `beat` and `is_downbeat`, plus bars), `sections` (character, energy, active stems), `moments` (drop, stop, vocal entry, ...), `hits` (kick/snare/hat rows, every drum onset, and 16th-note pattern strings), `stems` (per-beat energy arrays and active regions), `notes` (bass/vocal note rows plus a per-bar summary), `lyrics` (lines and words), and a pointer to `curves.json`. Every event carries `t`, `bar` and `beat`. |
 | `curves.json` | the generated code | Fixed-rate envelopes (default 20 Hz): energy for the mix and each stem, a smoothed mix, momentary LUFS, brightness, onset strength, and drum band envelopes. Not meant to be read by an LLM. |
 | `summary.md` | humans and LLMs | A templated description: tempo, key, a section timeline, when stems come in, the loudest and quietest bars, drum patterns, bass roots and the first lyric lines. |
 | `overview.png` | you | Waveform with sections and moments, energy lanes per stem, drum hits, a piano roll and lyric lines, with downbeats drawn through every panel. Use it to sanity-check a run. |
@@ -219,6 +229,7 @@ audio4llm/
     notes.py           6: Basic Pitch (CoreML, falls back to ONNX) on the bass/vocal stems, ghost-note filter, key
     assemble.py        7: writes the four final files from cache/
   report/
+    __init__.py        (package marker)
     analysis.py        builds analysis.json and curves.json; puts bar/beat on every event; drum patterns
     summary.py         summary.md templates
     overview.py        overview.png (matplotlib)
@@ -228,15 +239,19 @@ scripts/
 tests/
   conftest.py          fixtures: build the test clip, run the pipeline once per session
   test_end_to_end.py   the full pipeline against ground truth (marked slow)
-  test_grid.py, test_pipeline_cache.py, test_jsonfmt.py, test_drums.py, test_sections.py,
-  test_lyrics.py, test_notes.py, test_key.py   fast unit tests (no models)
+  test_assemble.py     assemble on hand-made caches: no beat grid, no hits, failed stages, --no-plot
+  test_cli.py          flag validation and run-folder settings
+  test_grid.py, test_pipeline_cache.py, test_jsonfmt.py, test_energy.py, test_drums.py,
+  test_sections.py, test_lyrics.py, test_notes.py, test_key.py   other fast unit tests (no models)
 docs/
   OUTPUT_SCHEMA.md     field-by-field reference for analysis.json and curves.json
   VISUALIZER_TEST.md   (yours) how to test the output with an LLM-written visualizer
 ```
 
 To add a stage: write `stages/<name>.py` exposing `STAGE = Stage(name=..., run=..., outputs=..., deps=...,
-config_keys=...)`, add it to `stages/__init__.py`, and read its cache file in `report/analysis.py`.
+config_keys=...)`, add it to `STAGES` in `stages/__init__.py`, and read its cache file in `report/analysis.py`.
+The CLI's `--force-stage` choices come from `STAGES`. If the stage needs a new setting, add it to `Config`
+and to `CONFIG_FLAGS` in `cli.py`.
 
 ---
 
@@ -256,9 +271,9 @@ downstream of it. Changing `--whisper-model` re-runs only `lyrics`. Changing `--
 
 - `--force` re-runs everything.
 - `--force-stage NAME` (repeatable) re-runs that stage, and therefore everything downstream of it.
-- `assemble` always runs. It only reads `cache/`, so it takes about a second. That's the part to iterate on when you change the output format: edit `report/*.py` and run `audio4llm runs/<clip>`.
+- `assemble` always runs. It only reads `cache/` (plus `input.wav` for the plot's waveform), so it takes about a second. That's the part to iterate on when you change the output format: edit `report/*.py` and run `audio4llm runs/<clip>`.
 - Deleting a file under `cache/` or `stems/` re-runs the stage that produced it.
-- Passing a run folder (`audio4llm runs/song`) re-uses its `input.wav`. `ingest` can't re-run without the original file.
+- Passing a run folder (`audio4llm runs/song`) re-uses its `input.wav` and the settings saved in `cache/config.json`. `ingest` can't re-run without the original file.
 
 Each stage's duration is logged as it finishes and summarised in the final table.
 
@@ -310,6 +325,7 @@ labelled *estimate* as a strong hint, not ground truth, and check `overview.png`
   - Swing and triplets are not detected; 16th-note snapping of `beat` positions deliberately leaves triplet positions alone.
   - `tempo_bpm` is one number. Use the beat times for rubato or tempo changes.
   - Half-time and double-time readings are possible on ambiguous material.
+  - With no steady pulse at all (drones, ambient, silence) the grid is empty, every event is placed in bar 1, and `summary.md` says so.
   - Beats are pulled onto nearby onsets (±40 ms), so in sparse passages without transients they inherit the tracker's ±20–50 ms error.
 - **Drum hits:**
   - These are heuristic band splits of the drum stem: kick below 150 Hz, snare 1–5 kHz, hats above 6 kHz. Toms, claps, rides and percussion land in whichever band fits.
@@ -347,8 +363,9 @@ decodes every input format. `ffprobe`, which is installed alongside it, reads th
 
 **MPS problems.** Demucs and beat_this try Apple's GPU (MPS) first. If MPS raises an error or produces
 non-finite output, the stage logs `falling back to CPU` and re-runs on the CPU. `meta.devices` in
-analysis.json records what was actually used. To skip MPS entirely, pass `--device cpu`. Demucs then takes
-about 4× longer (51 s instead of 13 s for 80 s of audio on an M1 Pro), with identical stems. `PYTORCH_ENABLE_MPS_FALLBACK` is not needed, because Demucs 4.1 already does its STFT
+analysis.json records what was actually used. To skip MPS entirely, pass `--device cpu`, plus
+`--force-stage stems --force-stage rhythm` if those stages are already cached. Demucs then takes about 3–4×
+longer (40–50 s instead of 13 s for 80 s of audio on an M1 Pro), with identical stems. `PYTORCH_ENABLE_MPS_FALLBACK` is not needed, because Demucs 4.1 already does its STFT
 on the CPU.
 
 **Model downloads.**
