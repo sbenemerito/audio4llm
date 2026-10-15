@@ -249,6 +249,7 @@ audio4llm/
 scripts/
   make_test_clip.py    synthesizes the 80 s, 120 BPM test clip and ground_truth.json (uses macOS `say`)
   update_schema_example.py   refreshes the trimmed real example in docs/OUTPUT_SCHEMA.md from a run folder
+  viz_prompt.py        copies a visualizer prompt (test, or --creative) filled in for a run folder to the clipboard
 tests/
   conftest.py          fixtures: build the test clip, run the pipeline once per session
   test_end_to_end.py   the full pipeline against ground truth (marked slow)
@@ -259,6 +260,7 @@ tests/
 docs/
   OUTPUT_SCHEMA.md     field-by-field reference for analysis.json and curves.json
   VISUALIZER_TEST.md   (yours) how to test the output with an LLM-written visualizer
+  VISUALIZER_CREATIVE.md   same foundations, but a prompt that gives the agent artistic freedom
 ```
 
 To add a stage: write `stages/<name>.py` exposing `STAGE = Stage(name=..., run=..., outputs=..., deps=...,

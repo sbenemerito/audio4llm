@@ -29,7 +29,7 @@ audio4llm path/to/clip.mp3                 # produces runs/<clip>/analysis.json 
 claude                                     # launch from the repo root
 ```
 
-Then paste the prompt from section 4, filling in the `<clip>` name. Output goes to `viz-runs/<clip>/<run-id>/`, which is gitignored.
+Then paste the prompt from section 4, filling in the `<clip>` name. `python scripts/viz_prompt.py runs/<clip>` copies it to the clipboard already filled in, ending with a "Special instructions" heading you can type after. Output goes to `viz-runs/<clip>/<run-id>/`, which is gitignored.
 
 Start with the synthetic test clip (`runs/test_clip/`). Its ground truth is known, so if the video is out of sync there, the bug is in the visualizer, not the analysis.
 
@@ -149,3 +149,5 @@ Append one of these to the prompt:
 - "Render a vertical 1080×1920 version for phones."
 
 Running the same clip with two different styles is a good test of whether the data carries enough meaning on its own, rather than only enough for one look.
+
+For a version that keeps this toolset but gives the agent artistic freedom instead of a coverage checklist, see [VISUALIZER_CREATIVE.md](VISUALIZER_CREATIVE.md) (`python scripts/viz_prompt.py --creative runs/<clip>`).
