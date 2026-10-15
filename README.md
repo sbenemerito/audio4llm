@@ -283,7 +283,7 @@ Each stage's duration is logged as it finishes and summarised in the final table
 
 ```bash
 python scripts/make_test_clip.py          # writes test_data/test_clip.wav + ground_truth.json (optional; tests do it)
-python -m pytest -m "not slow"            # fast unit tests, ~2 s
+python -m pytest -m "not slow"            # 160 fast unit tests, a few seconds
 python -m pytest                          # everything, including the end-to-end run (first time: minutes)
 ```
 
