@@ -356,9 +356,19 @@ def normalize_language(lang: str) -> str:
 def load_model(repo: str):
     """Load (or reuse) the model through mlx_whisper's own cache, so transcribe() gets the same object."""
     import mlx.core as mx
+    from huggingface_hub import snapshot_download
+    from huggingface_hub.utils import disable_progress_bars, enable_progress_bars
     from mlx_whisper.transcribe import ModelHolder
 
-    model = ModelHolder.get_model(repo, mx.float16)
+    try:  # already downloaded: skip the "Fetching 4 files" progress bar (keep it for real downloads)
+        snapshot_download(repo, local_files_only=True)
+        disable_progress_bars()
+    except Exception:
+        pass
+    try:
+        model = ModelHolder.get_model(repo, mx.float16)
+    finally:
+        enable_progress_bars()
     dims = model.dims
     untuned = model.alignment_heads.shape[0] == (dims.n_text_layer - dims.n_text_layer // 2) * dims.n_text_head
     if dims.n_text_layer == 4 and dims.n_text_head == 20 and untuned:  # turbo without shipped heads

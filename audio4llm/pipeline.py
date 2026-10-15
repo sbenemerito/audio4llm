@@ -16,9 +16,10 @@ from __future__ import annotations
 import json
 import logging
 import re
+import shutil
 import time
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable
@@ -30,6 +31,7 @@ from .jsonfmt import dumps
 log = logging.getLogger("audio4llm")
 
 MANIFEST = "manifest.json"
+CONFIG_FILE = "config.json"  # the settings of the last successful run; re-used when re-running a run folder
 
 
 @dataclass(frozen=True)
@@ -83,14 +85,19 @@ def _cache_key(stage: Stage, ctx: RunContext) -> dict:
     return key
 
 
+def _short(v) -> str:
+    is_hash = isinstance(v, str) and len(v) >= 32 and all(c in "0123456789abcdef" for c in v)
+    return repr(v[:10] + "…") if is_hash else repr(v)
+
+
 def _diff(old: dict, new: dict) -> str:
     changed = []
     for section in ("version", "config", "inputs"):
         a, b = old.get(section), new.get(section)
         if isinstance(a, dict) and isinstance(b, dict):
-            changed += [f"{k}: {a.get(k)!r} -> {b.get(k)!r}" for k in sorted(set(a) | set(b)) if a.get(k) != b.get(k)]
+            changed += [f"{k}: {_short(a.get(k))} -> {_short(b.get(k))}" for k in sorted(set(a) | set(b)) if a.get(k) != b.get(k)]
         elif a != b:
-            changed.append(f"{section}: {a!r} -> {b!r}")
+            changed.append(f"{section}: {_short(a)} -> {_short(b)}")
     return "; ".join(changed) or "settings changed"
 
 
@@ -159,7 +166,9 @@ def execute(ctx: RunContext, stages: list[Stage], force: bool = False, force_sta
             manifest.save()
             if stage.required:
                 log.error("%-8s FAILED after %.1fs: %s", stage.name, dt, exc)
-                raise PipelineError(f"stage '{stage.name}' failed: {exc}") from exc
+                err = PipelineError(f"stage '{stage.name}' failed: {exc}")
+                err.logged = True
+                raise err from exc
             log.exception("%-8s FAILED after %.1fs (optional stage, continuing without it)", stage.name, dt)
             for p in stage.outputs(ctx):  # never leave a half-written cache behind
                 if p.is_file():
@@ -211,9 +220,16 @@ def run(
     from .stages import STAGES
 
     src, run_dir = resolve_run_dir(Path(source), Path(runs_root), name)
+    is_new = not run_dir.exists()
     ctx = RunContext(run_dir=run_dir, config=config or Config(), source=src)
     log.info("run folder: %s", ctx.run_dir)
-    results = execute(ctx, STAGES, force=force, force_stages=tuple(force_stages))
+    try:
+        results = execute(ctx, STAGES, force=force, force_stages=tuple(force_stages))
+    except PipelineError:
+        if is_new and not ctx.input_wav.exists():  # nothing usable was produced: don't leave an empty folder
+            shutil.rmtree(ctx.run_dir, ignore_errors=True)
+        raise
+    write_text_atomic(ctx.cache_path(CONFIG_FILE), dumps(asdict(ctx.config)))
     return ctx, results
 
 
