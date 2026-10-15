@@ -1,0 +1,55 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "audio4llm"
+version = "0.1.0"
+description = "Turn a short music clip into beat-synced, LLM-readable analysis for writing visualizers."
+readme = "README.md"
+requires-python = ">=3.12"
+license = "MIT"
+# Exact pins, resolved and tested together on Python 3.14.2 / macOS 15 / Apple Silicon.
+# basic-pitch itself is NOT listed: its metadata requires tensorflow-macos on Python > 3.11,
+# which has no 3.14 build. Install it separately with --no-deps (see README > Setup);
+# its runtime deps are pinned below.
+dependencies = [
+    # core numerics / audio I/O
+    "numpy==2.5.4",
+    "scipy==1.18.1",
+    "soundfile==0.14.0",
+    "soxr==1.1.0",
+    "librosa==1.0.0",
+    "numba==0.68.0",
+    "llvmlite==0.50.0",
+    "pyloudnorm==0.2.0",
+    "matplotlib==3.11.2",
+    # stems + rhythm (torch)
+    "torch==2.14.1",
+    "torchaudio==2.11.0",
+    "demucs==4.1.0",
+    "beat-this==1.1.0",
+    # lyrics (Apple Silicon only)
+    "mlx==0.32.3; sys_platform == 'darwin' and platform_machine == 'arm64'",
+    "mlx-whisper==0.4.3; sys_platform == 'darwin' and platform_machine == 'arm64'",
+    # notes: basic-pitch runtime deps (basic-pitch is installed with --no-deps)
+    "mir_eval==0.8.2",
+    "pretty_midi==0.2.11.post0",
+    "resampy==0.4.3",
+    "scikit-learn==1.9.1",
+    "onnxruntime==1.31.0",
+    "coremltools==9.1.dev1; sys_platform == 'darwin'",
+]
+
+[project.optional-dependencies]
+dev = ["pytest==9.1.1"]
+
+[project.scripts]
+audio4llm = "audio4llm.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["audio4llm*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = ["slow: runs the full pipeline on the synthetic test clip (minutes on first run)"]

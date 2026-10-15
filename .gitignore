@@ -1,0 +1,49 @@
+# analysis outputs
+runs/
+viz-runs/
+test_data/
+
+# audio and media
+*.wav
+*.mp3
+*.m4a
+*.aac
+*.flac
+*.ogg
+*.opus
+*.aiff
+*.aif
+*.mid
+*.mp4
+*.mov
+
+# model caches (if pointed inside the repo via HF_HOME / TORCH_HOME)
+.cache/
+hf_cache/
+torch_hub/
+pretrained_models/
+*.ckpt
+*.th
+*.safetensors
+*.mlpackage/
+
+# python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.ipynb_checkpoints/
+
+# os / editors
+.DS_Store
+.idea/
+.vscode/
