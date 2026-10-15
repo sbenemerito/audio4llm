@@ -60,7 +60,8 @@ def main(argv: list[str] | None = None) -> int:
     )
     logging.getLogger("audio4llm").setLevel(logging.DEBUG if args.verbose else logging.INFO)
     if not args.verbose:  # "unauthenticated requests to the HF Hub" is noise for public models
-        logging.getLogger("huggingface_hub").setLevel(logging.ERROR)
+        for name in ("huggingface_hub", "huggingface_hub.utils._http"):
+            logging.getLogger(name).setLevel(logging.ERROR)
 
     from .pipeline import PipelineError, format_results, run
 
