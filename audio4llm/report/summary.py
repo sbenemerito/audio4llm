@@ -45,8 +45,8 @@ def render(analysis: dict, curves: dict, name: str) -> str:
     L: list[str] = [f"# {name}", ""]
 
     key = g.get("key")
-    head = [f"**{src['duration']:.1f} s**", f"**{g['tempo_bpm']:.1f} BPM**" if g.get("tempo_bpm") else "tempo unknown",
-            g.get("time_signature") or "?"]
+    head = [f"**{src['duration']:.1f} s**"]
+    head += [f"**{g['tempo_bpm']:.1f} BPM**", g.get("time_signature") or "?"] if g.get("tempo_bpm") else ["no steady beat"]
     if key:
         head.append(f"key ≈ {key['label']} (estimate)")
     loud = g.get("loudness", {})
@@ -54,8 +54,12 @@ def render(analysis: dict, curves: dict, name: str) -> str:
         head.append(f"{loud['integrated_lufs']:.1f} LUFS")
     head.append(f"vocals: {'yes' + (' (' + g['language'] + ')' if g.get('language') else '') if g.get('has_vocals') else 'no'}")
     L += [" · ".join(head), ""]
-    L += [f"{g['bar_count']} bars, {g['beat_count']} beats. All times are seconds into `input.wav`. "
-          "Bars count from the first downbeat; `bar.beat` positions are 1-based.", ""]
+    if not g["beat_count"]:
+        L += ["No beat was found (no steady pulse), so there is no bar grid; every event is placed in bar 1. "
+              "All times are seconds into `input.wav`.", ""]
+    else:
+        L += [f"{g['bar_count']} bars, {g['beat_count']} beats. All times are seconds into `input.wav`. "
+              "Bars count from the first downbeat; `bar.beat` positions are 1-based.", ""]
 
     # timeline
     secs = analysis.get("sections")
@@ -63,7 +67,8 @@ def render(analysis: dict, curves: dict, name: str) -> str:
         L += ["## Timeline", "", "| Time | Bars | Character | Energy | Active stems | Description |", "|---|---|---|---|---|---|"]
         for s in secs:
             stems = ", ".join(s.get("active_stems", [])) or "-"
-            L.append(f"| {ts(s['start'])}–{ts(s['end'])} | {s['bars'][0]}–{s['bars'][1]} | **{s.get('character', '?')}** "
+            bars = f"{s['bars'][0]}–{s['bars'][1]}" if s.get("bars") else "-"
+            L.append(f"| {ts(s['start'])}–{ts(s['end'])} | {bars} | **{s.get('character', '?')}** "
                      f"| {meter(s.get('energy'))} | {stems} | {s.get('description', '')} |")
         L.append("")
 

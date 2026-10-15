@@ -112,8 +112,9 @@ def refine_to_onsets(beats: np.ndarray, mono: np.ndarray, sr: int, window_s: flo
     import librosa
 
     hop = sr // 200
-    env = librosa.onset.onset_strength(y=mono, sr=sr, hop_length=hop, n_fft=1024)
-    t = np.arange(len(env)) * hop / sr
+    lead = int(0.1 * sr)  # pad so an onset right at t = 0 still has a frame before it to rise from
+    env = librosa.onset.onset_strength(y=np.concatenate([np.zeros(lead, mono.dtype), mono]), sr=sr, hop_length=hop, n_fft=1024)
+    t = np.arange(len(env)) * hop / sr - lead / sr
     clear = 2.0 * np.percentile(env, 75)  # well above the typical frame-to-frame flux
     out = beats.copy()
     for i, b in enumerate(beats):
@@ -123,7 +124,7 @@ def refine_to_onsets(beats: np.ndarray, mono: np.ndarray, sr: int, window_s: flo
         k = idx[np.argmax(env[idx])]
         is_peak = 0 < k < len(env) - 1 and env[k] >= env[k - 1] and env[k] >= env[k + 1]
         if is_peak and env[k] > clear:
-            out[i] = t[k]
+            out[i] = max(t[k], 0.0)
     if np.any(np.diff(out) <= 0):  # never reorder beats; fall back to the tracker where it would
         bad = np.flatnonzero(np.diff(out) <= 0)
         out[bad] = beats[bad]
@@ -154,8 +155,11 @@ def run(ctx: RunContext) -> None:
         "tempo_std_bpm": round(float(np.std(local_bpm)), 2) if len(local_bpm) else None,
     }
     ctx.write_json("rhythm.json", out)
-    log.info("rhythm: %d beats, %d bars, %s, %.1f BPM (%s)", len(grid), len(grid.downbeat_idx),
-             out["time_signature"], out["tempo_bpm"] or 0, device)
+    if len(grid) < 2:
+        log.warning("rhythm: no beat found (%d beats); bar/beat positions will all be bar 1", len(grid))
+    else:
+        log.info("rhythm: %d beats, %d bars, %s, %.1f BPM (%s)", len(grid), len(grid.downbeat_idx),
+                 out["time_signature"], out["tempo_bpm"], device)
 
 
 STAGE = Stage(
@@ -163,5 +167,5 @@ STAGE = Stage(
     run=run,
     outputs=lambda ctx: [ctx.cache_path("rhythm.json")],
     deps=("ingest",),
-    version=3,
+    version=4,
 )

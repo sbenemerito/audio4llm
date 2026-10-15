@@ -1,15 +1,17 @@
 """Stage 7 - assemble: merge cached stage outputs into the final files.
 
-Reads only cache/*.json and cache/energy.npz (no audio models), so it runs in
-about a second and re-runs on every invocation. Writes, in the run folder:
+Reads only cache/*.json and cache/energy.npz (plus input.wav for the plot's
+waveform; no models), so it runs in about a second and re-runs on every
+invocation. Writes, in the run folder:
 
   analysis.json  the LLM-facing analysis (see docs/OUTPUT_SCHEMA.md)
   curves.json    dense fixed-rate envelopes for code (--curves-hz)
   summary.md     templated plain-language summary
   overview.png   diagnostic plot (skipped with --no-plot)
 
-Optional stages that failed or were skipped show up as null plus a note in
-meta.warnings, so a partial analysis is still usable.
+Optional stages that failed show up as null plus a note in meta.warnings, so a
+partial analysis is still usable (lyrics that were skipped for lack of vocals
+are an object with status "skipped", not null).
 """
 
 from __future__ import annotations
@@ -34,6 +36,8 @@ def run(ctx: RunContext) -> None:
         from ..report import overview
 
         overview.render(analysis, curves, ctx.input_wav, ctx.out_path("overview.png"), f"audio4llm · {ctx.name}")
+    elif ctx.out_path("overview.png").exists():  # never leave a plot that no longer matches the analysis
+        ctx.out_path("overview.png").unlink()
     for w in analysis["meta"]["warnings"]:
         log.warning("assemble: %s", w)
     size_kb = ctx.out_path("analysis.json").stat().st_size / 1024

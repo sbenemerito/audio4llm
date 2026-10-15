@@ -187,6 +187,8 @@ class BeatGrid:
     def _label(self, j: int) -> tuple[int, int]:
         """(bar, beat) of integer beat index j, continuing the numbering past either end."""
         n = len(self.beats)
+        if n == 0:  # no grid at all (e.g. a drone or silence): everything is bar 1
+            return 1, 1
         if 0 <= j < n:
             return int(self.bar_of_beat[j]), int(self.pos_of_beat[j])
         if j < 0:
@@ -218,6 +220,8 @@ class BeatGrid:
 
     def bar_range(self, start: float, end: float) -> tuple[int, int]:
         """First and last bar of a span whose edges sit (roughly) on bar lines; no snapping involved."""
+        if len(self.beats) == 0:
+            return 1, 1
         first = int(np.floor(self.beat_position(float(start)) + 0.25))
         last = int(np.floor(self.beat_position(float(end)) - 0.25))
         return self._label(first)[0], self._label(max(last, first))[0]

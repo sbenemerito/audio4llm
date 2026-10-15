@@ -125,7 +125,7 @@ def build_sections(sections: dict | None, loc: Locator) -> list[dict] | None:
         return None
     out = []
     for i, s in enumerate(sections.get("sections", [])):
-        bars = s.get("bars") or list(loc.grid.bar_range(s["start"], s["end"]))
+        bars = s.get("bars") or (list(loc.grid.bar_range(s["start"], s["end"])) if len(loc.grid) else None)
         item = {"index": i, "start": r3(s["start"]), "end": r3(s["end"]), "bars": bars}
         item.update({k: v for k, v in s.items() if k not in ("start", "end", "bars")})
         out.append(item)
@@ -151,16 +151,13 @@ def drum_patterns(rows: dict[str, list[list]], grid: BeatGrid) -> list[dict]:
     if not bars:
         return []
     steps = grid.bpb * STEPS_PER_BEAT
-    first_idx = {k + 1: int(d) for k, d in enumerate(grid.downbeat_idx)}
     pats: dict[int, dict[str, list[str]]] = {b["bar"]: {h: ["."] * steps for h in HIT_TYPES} for b in bars}
     for h in HIT_TYPES:
-        for t, *_ in rows.get(h, []):
-            x = grid.beat_position(t)
-            bar = grid.locate(t)[0]
-            if bar not in pats:
-                continue
-            step = int(round((x - first_idx[bar]) * STEPS_PER_BEAT))
-            if 0 <= step < steps:
+        for _, bar, beat, *_ in rows.get(h, []):
+            step = int(round((beat - 1) * STEPS_PER_BEAT))
+            if step == steps:  # e.g. beat 4.9 rounds up to the next bar's first 16th
+                bar, step = bar + 1, 0
+            if bar in pats and 0 <= step < steps:
                 pats[bar][h][step] = "x"
     out: list[dict] = []
     for bar in sorted(pats):
@@ -175,18 +172,23 @@ def drum_patterns(rows: dict[str, list[list]], grid: BeatGrid) -> list[dict]:
 
 
 def build_hits(hits: dict | None, grid: BeatGrid, loc: Locator) -> dict | None:
-    if not hits or not hits.get("hits"):
+    if hits is None:
         return None
     rows: dict[str, list[list]] = {h: [] for h in HIT_TYPES}
-    for h in hits["hits"]:
+    for h in hits.get("hits", []):
         if h["type"] in rows:
             p = loc(h["t"])
             rows[h["type"]].append([p["t"], p["bar"], p["beat"], r2(h.get("strength", 1.0))])
+    onsets = [[p["t"], p["bar"], p["beat"]] for p in map(loc, hits.get("onsets", []))]
     return {
-        "about": hits.get("method", "estimate from the drum stem") + ". Rows are [t, bar, beat, strength 0..1].",
+        "about": hits.get("method", "estimate from the drum stem") + ". Rows are [t, bar, beat, strength 0..1]. "
+                 "Only counted where the drum stem is active.",
         "columns": ["t", "bar", "beat", "strength"],
-        "counts": {h: len(v) for h, v in rows.items()},
+        "counts": {**{h: len(v) for h, v in rows.items()}, "onsets": len(onsets)},
         **rows,
+        "onsets_about": "every drum-stem onset as [t, bar, beat], typed or not (toms, claps, fills included): "
+                        "use it for 'any drum hit' effects",
+        "onsets": onsets,
         "patterns_about": f"One character per 16th note (x = hit), {grid.bpb * STEPS_PER_BEAT} per bar; "
                           "consecutive bars with the same pattern are merged into one entry.",
         "patterns": drum_patterns(rows, grid),
@@ -268,7 +270,7 @@ def build_notes(notes: dict | None, loc: Locator) -> dict | None:
 def build_lyrics(lyrics: dict | None, loc: Locator) -> dict | None:
     if not lyrics:
         return None
-    out = {k: lyrics.get(k) for k in ("status", "reason", "language", "model") if lyrics.get(k) is not None}
+    out = {k: lyrics.get(k) for k in ("status", "reason", "language", "model")}  # always present, null if n/a
     lines = []
     for ln in lyrics.get("lines", []):
         p = loc(ln["start"])
@@ -311,7 +313,7 @@ def build(ctx: RunContext) -> tuple[dict, dict]:
         "conventions": CONVENTIONS,
         "source": {
             "file": ingest["source"],
-            "input_wav": str(ctx.input_wav),
+            "input_wav": str(ctx.input_wav.resolve()),
             "start_offset": ingest.get("start", 0.0),
             "duration": r3(duration),
             "sample_rate": ingest["sample_rate"],

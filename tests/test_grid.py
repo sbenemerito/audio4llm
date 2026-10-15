@@ -79,3 +79,11 @@ def test_bar_range_of_bar_aligned_span():
     grid = BeatGrid.from_tracker(beats, beats[::4])
     assert grid.bar_range(0.0, 4.044) == (1, 2)  # edges a few ms off the bar lines
     assert grid.bar_range(4.04, 8.03) == (3, 4)
+
+
+def test_empty_grid_is_safe():
+    grid = BeatGrid.from_tracker([], [], duration=10.0)
+    assert len(grid) == 0 and grid.tempo_bpm is None and grid.bars() == []
+    assert grid.locate(3.0) == (1, 1.0)
+    assert grid.bar_range(0.0, 10.0) == (1, 1)
+    assert grid.beat_edges().shape == (1,)

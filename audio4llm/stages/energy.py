@@ -5,7 +5,8 @@ Everything here is plain DSP on input.wav and the stems (no models).
 Writes:
   cache/energy.npz   dense 100 Hz curves (see CURVE KEYS below)
   cache/energy.json  loudness stats, per-stem levels, active regions, has_vocals
-  cache/hits.json    drum-stem onsets and kick/snare/hat estimates (from drums.py)
+  cache/hits.json    drum-stem onsets and kick/snare/hat estimates (from drums.py), kept only
+                     where the drum stem is active
 
 Curve keys in energy.npz (all arrays share ``times``):
   times                frame centre times, s (FRAME_HZ per second)
@@ -45,6 +46,7 @@ ACT_GAP_S = 0.75  # merge regions separated by less than this
 ACT_FAST_S = 0.05  # sharper level used to place region edges precisely
 ACT_EDGE_SEARCH_S = 0.6  # how far an edge may move from where the smoothed level put it
 HAS_VOCALS_MIN_S = 1.0
+HIT_GATE_SLACK_S = 0.1  # drum hits within 0.1 s of an active drum region still count (edges are smoothed)
 
 
 # ---- helpers shared with other stages ---------------------------------------------
@@ -198,6 +200,19 @@ def brightness_and_onset(mono: np.ndarray, sr: int, n_frames: int) -> tuple[np.n
 
 # ---- stage --------------------------------------------------------------------------
 
+def gate_to_regions(hits: dict, regions: list[list[float]], times: np.ndarray, slack: float = HIT_GATE_SLACK_S) -> tuple[dict, np.ndarray]:
+    """Drop drum hits/onsets outside the drum stem's active regions; return a 0/1 frame mask (with short fades)."""
+    inside = lambda t: any(s - slack <= t <= e + slack for s, e in regions)
+    kept = [h for h in hits.get("hits", []) if inside(h["t"])]
+    out = dict(hits)
+    out["hits"] = kept
+    out["onsets"] = [t for t in hits.get("onsets", []) if inside(t)]
+    out["counts"] = {k: sum(h["type"] == k for h in kept) for k in hits.get("counts", {})}
+    mask = np.zeros(len(times))
+    for s, e in regions:
+        mask[(times >= s - slack) & (times <= e + slack)] = 1.0
+    return out, smooth(mask, 0.05)
+
 def run(ctx: RunContext) -> None:
     from .. import drums
 
@@ -238,8 +253,11 @@ def run(ctx: RunContext) -> None:
     # drum hits + band envelopes
     drum_y = sources["drums"]
     hits, bands = drums.analyze(drum_y.mean(axis=0), sr, n_frames, FRAME_HZ)
+    # drums.py normalises each band to the stem's own peak, so on drum-less audio Demucs bleed would
+    # turn into full-strength "kicks". Only keep hits and band envelopes where the drum stem is active.
+    hits, gate = gate_to_regions(hits, active.get("drums", []), times)
     for k, v in bands.items():
-        curves[f"drums_{k}"] = v[:n_frames]
+        curves[f"drums_{k}"] = v[:n_frames] * gate
 
     vocal_s = sum(e - s for s, e in active.get("vocals", []))
     np.savez_compressed(ctx.cache_path("energy.npz"), **{k: v.astype(np.float32) for k, v in curves.items()})
@@ -268,5 +286,5 @@ STAGE = Stage(
     run=run,
     outputs=lambda ctx: [ctx.cache_path(f) for f in ("energy.npz", "energy.json", "hits.json")],
     deps=("ingest", "stems"),
-    version=3,  # 2: real drum hits and band envelopes from drums.py; 3: sharper activity edges
+    version=4,  # 2: drum hits from drums.py; 3: sharper activity edges; 4: hits gated to drum activity
 )

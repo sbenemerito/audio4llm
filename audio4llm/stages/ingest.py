@@ -20,6 +20,7 @@ from ..pipeline import Stage
 log = logging.getLogger("audio4llm")
 
 LONG_INPUT_WARN_S = 90.0
+MIN_DURATION_S = 2.0  # Demucs, loudness (400 ms blocks) and bar-level sections need at least this much
 
 
 def _sha1(path: Path) -> str:
@@ -79,7 +80,7 @@ def run(ctx: RunContext) -> None:
     if cfg.start:
         cmd += ["-ss", f"{cfg.start:.3f}"]
     cmd += ["-i", str(src)]
-    if cfg.duration:
+    if cfg.duration is not None:
         cmd += ["-t", f"{cfg.duration:.3f}"]
     tmp = ctx.input_wav.with_name("input.tmp.wav")
     cmd += ["-map", "0:a:0", "-vn", "-ac", str(CHANNELS), "-ar", str(SAMPLE_RATE), "-c:a", "pcm_s16le", str(tmp)]
@@ -89,8 +90,14 @@ def run(ctx: RunContext) -> None:
     tmp.replace(ctx.input_wav)
 
     info = sf.info(str(ctx.input_wav))
-    if info.frames == 0:
-        raise RuntimeError("decoded audio is empty (check --start/--duration)")
+    got = info.frames / info.samplerate
+    if got < MIN_DURATION_S:
+        ctx.input_wav.unlink()
+        raise RuntimeError(f"decoded audio is only {got:.2f}s; audio4llm needs at least {MIN_DURATION_S:g}s "
+                           "(check --start/--duration)")
+    if cfg.duration is not None and got < cfg.duration - 0.5:
+        log.warning("ingest: asked for %.1fs from %.1fs but the input ends there, so the clip is %.1fs",
+                    cfg.duration, cfg.start or 0.0, got)
     ctx.write_json("ingest.json", {
         "source": str(src),
         "source_sha1": _sha1(src),

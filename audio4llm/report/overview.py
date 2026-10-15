@@ -94,8 +94,9 @@ def render(analysis: dict, curves: dict, input_wav: Path, out_path: Path, title:
     for s in secs:
         ax_wave.text((s["start"] + s["end"]) / 2, 1.42, s.get("character", ""), ha="center", va="center",
                      fontsize=10, color=INK, fontweight="bold")
-        ax_wave.text((s["start"] + s["end"]) / 2, 1.2, f"bars {s['bars'][0]}–{s['bars'][1]}", ha="center",
-                     va="center", fontsize=8, color=INK_2)
+        if s.get("bars"):
+            ax_wave.text((s["start"] + s["end"]) / 2, 1.2, f"bars {s['bars'][0]}–{s['bars'][1]}", ha="center",
+                         va="center", fontsize=8, color=INK_2)
     step = 4 if len(downbeats) > 24 else 1
     for b in analysis["grid"]["bars"]:
         if b["bar"] >= 1 and (b["bar"] - 1) % step == 0:
@@ -109,7 +110,8 @@ def render(analysis: dict, curves: dict, input_wav: Path, out_path: Path, title:
     ax_wave.set_title(title, loc="left", fontsize=12, color=INK, pad=6)
     g = analysis["global"]
     key = (g.get("key") or {}).get("label")
-    sub = f"{g.get('tempo_bpm') or 0:.1f} BPM · {g.get('time_signature')} · " + (f"key ≈ {key} · " if key else "") + \
+    tempo = f"{g['tempo_bpm']:.1f} BPM · {g.get('time_signature')}" if g.get("tempo_bpm") else "no steady beat"
+    sub = f"{tempo} · " + (f"key ≈ {key} · " if key else "") + \
           f"{g['loudness'].get('integrated_lufs')} LUFS · thin vertical lines = downbeats, ticks at top = beats"
     ax_wave.text(1.0, 1.02, sub, transform=ax_wave.transAxes, ha="right", va="bottom", fontsize=8.5, color=INK_2)
     ax_wave.set_ylabel("waveform", rotation=0, ha="right", va="center")
