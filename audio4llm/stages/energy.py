@@ -42,6 +42,8 @@ ACT_ABS_DB = -60.0  # ...and above this absolute level
 ACT_HYST_DB = 3.0  # hysteresis: stay active until 3 dB below the threshold
 ACT_MIN_S = 0.4  # drop regions shorter than this
 ACT_GAP_S = 0.75  # merge regions separated by less than this
+ACT_FAST_S = 0.05  # sharper level used to place region edges precisely
+ACT_EDGE_SEARCH_S = 0.6  # how far an edge may move from where the smoothed level put it
 HAS_VOCALS_MIN_S = 1.0
 
 
@@ -108,7 +110,29 @@ def active_regions(stem_db: np.ndarray, mix_db: np.ndarray, times: np.ndarray) -
     for i, (v, a, b) in enumerate(zip(level, on, off)):
         state = v >= a if not state else v >= b
         mask[i] = state
-    return regions_from_mask(mask, times, ACT_MIN_S, ACT_GAP_S)
+    return refine_edges(regions_from_mask(mask, times, ACT_MIN_S, ACT_GAP_S), stem_db, on, off)
+
+
+def refine_edges(regions: list[list[float]], stem_db: np.ndarray, on: np.ndarray, off: np.ndarray) -> list[list[float]]:
+    """Move region edges to where a sharper (50 ms) level crosses the threshold.
+
+    The 0.5 s smoothing that keeps activity from flickering also smears each edge by about a
+    quarter second (an entry at 32.0 s would be reported at 31.8 s). Edges move by at most
+    ACT_EDGE_SEARCH_S, and only to a frame that is itself above the threshold.
+    """
+    fast = to_db(smooth(10 ** (stem_db / 10), ACT_FAST_S))
+    n, reach, slack = len(fast), int(ACT_EDGE_SEARCH_S * FRAME_HZ), FRAME_HZ // 10
+    out = []
+    for s, e in regions:
+        i0, i1 = int(round(s * FRAME_HZ)), int(round(e * FRAME_HZ))
+        lo, hi = max(0, i0 - slack), min(n, i0 + reach)
+        up = np.flatnonzero(fast[lo:hi] >= on[lo:hi])
+        ns = (lo + up[0]) / FRAME_HZ if len(up) else s
+        lo, hi = max(0, i1 - reach), min(n, i1 + slack)
+        up = np.flatnonzero(fast[lo:hi] >= off[lo:hi])
+        ne = (lo + up[-1] + 1) / FRAME_HZ if len(up) else e
+        out.append([round(ns, 3), round(ne, 3)] if ne - ns >= ACT_MIN_S else [s, e])
+    return out
 
 
 # ---- loudness ------------------------------------------------------------------------
@@ -244,4 +268,5 @@ STAGE = Stage(
     run=run,
     outputs=lambda ctx: [ctx.cache_path(f) for f in ("energy.npz", "energy.json", "hits.json")],
     deps=("ingest", "stems"),
+    version=3,  # 2: real drum hits and band envelopes from drums.py; 3: sharper activity edges
 )
