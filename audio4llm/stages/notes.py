@@ -9,7 +9,7 @@ posteriorgrams agree to ~1e-6).
 Per stem:
   bass    30-400 Hz. Notes whose onset is outside the bass stem's active regions (energy.json)
           are dropped as separation bleed, then harmonic ghosts (see drop_ghost_notes).
-  vocals  80-1100 Hz. Skipped with a reason when energy.json says has_vocals is false;
+  vocals  80-1100 Hz. Skipped with a reason under --no-vocals or when energy.json says has_vocals is false;
           otherwise notes outside the vocal active regions are dropped. Spoken or rapped
           vocals still produce "notes" that follow the speech intonation.
 
@@ -288,7 +288,7 @@ def run(ctx: RunContext) -> None:
     if energy is None:
         log.warning("notes: energy.json missing; transcribing both stems without activity gating")
     active = (energy or {}).get("active", {})
-    has_vocals = True if energy is None else bool(energy.get("has_vocals"))
+    has_vocals = ctx.config.vocals and (True if energy is None else bool(energy.get("has_vocals")))
 
     stems = ["bass"] + (["vocals"] if has_vocals else [])
     raw, backend, backend_note = transcribe({s: ctx.stem_path(s) for s in stems})
@@ -302,7 +302,9 @@ def run(ctx: RunContext) -> None:
             kept, ghosts = drop_ghost_notes(kept)
             dropped["ghost"] = len(ghosts)
         out_stems[stem] = _stem_entry(ctx, stem, kept, dropped, f"no notes found inside the {stem} stem's active regions")
-    if not has_vocals:
+    if not ctx.config.vocals:
+        out_stems["vocals"] = _skipped_entry(ctx, "vocals", "vocals disabled with --no-vocals")
+    elif not has_vocals:
         out_stems["vocals"] = _skipped_entry(ctx, "vocals", f"energy.json: has_vocals is false "
                                              f"({energy.get('vocal_seconds', 0)} s of vocal activity)")
 
@@ -319,5 +321,6 @@ STAGE = Stage(
     run=run,
     outputs=lambda ctx: [ctx.cache_path("notes.json")],
     deps=("stems", "energy"),
+    config_keys=("vocals",),
     required=False,
 )

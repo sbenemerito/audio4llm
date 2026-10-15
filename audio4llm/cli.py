@@ -16,7 +16,7 @@ from .stages import STAGES
 STAGE_NAMES = tuple(s.name for s in STAGES)
 MAX_CURVES_HZ = 100.0  # the energy stage analyses at 100 frames/s; more would only repeat samples
 # CLI flags that map 1:1 onto Config fields (None = not given on the command line)
-CONFIG_FLAGS = ("start", "duration", "demucs_model", "whisper_model", "language", "curves_hz", "plot", "device")
+CONFIG_FLAGS = ("start", "duration", "vocals", "demucs_model", "whisper_model", "language", "curves_hz", "plot", "device")
 
 EPILOG = """\
 examples:
@@ -69,6 +69,10 @@ def build_parser() -> argparse.ArgumentParser:
                    help="stem separation model; htdemucs_ft is slightly better and ~4x slower (default: htdemucs)")
     p.add_argument("--whisper-model", help=f"mlx-whisper model repo (default: {DEFAULT_WHISPER_MODEL})")
     p.add_argument("--language", help="lyrics language code, e.g. en, es, ja (default: auto-detect)")
+    p.add_argument("--vocals", action=argparse.BooleanOptionalAction, default=None,
+                   help="--no-vocals treats the clip as instrumental: the vocal stem is never cut into regions, "
+                        "Whisper (language detection + lyrics) and vocal note transcription are skipped. "
+                        "--vocals goes back to auto-detection (default)")
     p.add_argument("--curves-hz", type=_number("hz"), help="sample rate of curves.json envelopes, up to 100 (default: 20)")
     p.add_argument("--device", choices=("auto", "mps", "cpu"),
                    help="torch device for Demucs and beat_this when they run (default: auto = MPS if available); "

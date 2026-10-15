@@ -116,3 +116,13 @@ def test_drum_pattern_steps(beat, expected_bar, step):
     grid = BeatGrid.from_tracker(np.arange(0.0, 8.0, 0.5), np.arange(0.0, 8.0, 2.0), 8.0)
     pats = drum_patterns({"kick": [[0.0, 1, beat, 1.0]]}, grid)
     assert pats[0]["bars"][0] == expected_bar and pats[0]["kick"][step] == "x"
+
+
+def test_vocals_disabled_is_reported(tmp_path):
+    ctx = fake_run(tmp_path)
+    energy = ctx.read_json("energy.json")
+    ctx.write_json("energy.json", {**energy, "vocals_disabled": True})
+    a = assembled(ctx)
+    assert a["global"]["vocals_disabled"] is True and a["global"]["has_vocals"] is False
+    text = ctx.out_path("summary.md").read_text()
+    assert "vocals: off (--no-vocals)" in text and "not analysed (--no-vocals)" in text

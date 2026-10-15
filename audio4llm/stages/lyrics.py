@@ -51,6 +51,7 @@ from ..pipeline import Stage
 log = logging.getLogger("audio4llm")
 
 SR = 16000  # whisper's input rate
+NO_VOCALS_REASON = "vocals disabled with --no-vocals"
 
 # regions
 PAD_S = 0.4  # activity edges are smoothed; onsets/consonants sit just outside them
@@ -437,6 +438,10 @@ def _write(ctx: RunContext, status: str, reason: str | None, **fields) -> None:
 
 
 def run(ctx: RunContext) -> None:
+    if not ctx.config.vocals:  # --no-vocals: nothing to cut, detect or transcribe
+        _write(ctx, "skipped", NO_VOCALS_REASON)
+        log.info("lyrics: skipped (%s)", NO_VOCALS_REASON)
+        return
     energy = ctx.read_json("energy.json")
     active = sorted(energy.get("active", {}).get("vocals", []))
     if not energy.get("has_vocals") or not active:
@@ -488,6 +493,6 @@ STAGE = Stage(
     run=run,
     outputs=lambda ctx: [ctx.cache_path("lyrics.json")],
     deps=("stems", "energy"),
-    config_keys=("whisper_model", "language"),
+    config_keys=("whisper_model", "language", "vocals"),
     required=False,
 )

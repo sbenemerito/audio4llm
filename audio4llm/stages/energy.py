@@ -5,6 +5,7 @@ Everything here is plain DSP on input.wav and the stems (no models).
 Writes:
   cache/energy.npz   dense 100 Hz curves (see CURVE KEYS below)
   cache/energy.json  loudness stats, per-stem levels, active regions, has_vocals
+                     (with --no-vocals: no vocal regions, has_vocals false, vocals_disabled true)
   cache/hits.json    drum-stem onsets and kick/snare/hat estimates (from drums.py), kept only
                      where the drum stem is active
 
@@ -259,6 +260,8 @@ def run(ctx: RunContext) -> None:
     for k, v in bands.items():
         curves[f"drums_{k}"] = v[:n_frames] * gate
 
+    if not ctx.config.vocals:  # --no-vocals: the vocal stem's level is still measured, but it never counts as vocals
+        active["vocals"] = []
     vocal_s = sum(e - s for s, e in active.get("vocals", []))
     np.savez_compressed(ctx.cache_path("energy.npz"), **{k: v.astype(np.float32) for k, v in curves.items()})
     ctx.write_json("energy.json", {
@@ -270,6 +273,7 @@ def run(ctx: RunContext) -> None:
         "active": active,
         "has_vocals": vocal_s >= HAS_VOCALS_MIN_S,
         "vocal_seconds": round(vocal_s, 2),
+        "vocals_disabled": not ctx.config.vocals,
     })
     ctx.write_json("hits.json", hits)
     log.info("energy: %.1f LUFS, active stems: %s, %d drum hits", loud["integrated_lufs"] or float("nan"),
@@ -286,5 +290,6 @@ STAGE = Stage(
     run=run,
     outputs=lambda ctx: [ctx.cache_path(f) for f in ("energy.npz", "energy.json", "hits.json")],
     deps=("ingest", "stems"),
+    config_keys=("vocals",),
     version=4,  # 2: drum hits from drums.py; 3: sharper activity edges; 4: hits gated to drum activity
 )

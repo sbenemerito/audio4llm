@@ -329,6 +329,7 @@ def build(ctx: RunContext) -> tuple[dict, dict]:
             "key": ({k: key.get(k) for k in ("label", "confidence", "runner_up")} | {"estimate": True}) if key else None,
             "loudness": energy["loudness"],
             "has_vocals": bool(energy.get("has_vocals")),
+            "vocals_disabled": bool(energy.get("vocals_disabled")),
             "language": lang,
         },
         "grid": {

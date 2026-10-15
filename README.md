@@ -80,6 +80,18 @@ already exist and nothing it depends on has changed (see [Caching](#caching-and-
 and `assemble` writes `null` for that part with a note in `meta.warnings`. `lyrics` skips itself cleanly
 when the vocal stem is silent (instrumentals).
 
+**`--no-vocals`** tells audio4llm the clip is instrumental, whatever the vocal stem contains:
+
+- no vocal activity regions are cut, so there is no `vocal_entry` moment and sections don't list vocals
+- Whisper is never loaded, so there is no language detection and no lyrics
+- vocal note transcription is skipped
+- `global.has_vocals` is false and `global.vocals_disabled` is true
+
+Demucs still writes `stems/vocals.wav`, because it separates all four stems in one pass and skipping one
+would save nothing. That stem's energy stays in `curves.json`: on an instrumental it is usually a lead synth
+or bleed. Use the flag when Whisper hallucinates on an instrumental, or to save the lyrics stage's time.
+`--vocals` switches back to auto-detection.
+
 ---
 
 ## Setup
@@ -140,6 +152,7 @@ audio4llm song.m4a --start 62 --duration 30         # analyse 1:02-1:32 only (tr
 audio4llm song.mp3 --name song-chorus               # choose the run folder name
 audio4llm song.mp3 --demucs-model htdemucs_ft       # better stems, ~4x slower
 audio4llm song.mp3 --language es                    # skip language detection for lyrics
+audio4llm song.mp3 --no-vocals                      # instrumental: skip vocal regions, Whisper and vocal notes
 audio4llm song.mp3 --whisper-model mlx-community/whisper-small-mlx   # lighter lyrics model (481 MB)
 audio4llm song.mp3 --curves-hz 30                   # curves.json at 30 Hz (only re-runs assemble)
 audio4llm song.mp3 --force-stage lyrics             # redo one stage (plus anything downstream of it)
@@ -262,7 +275,7 @@ holds the stage version, the settings it used, the run tokens of its upstream st
 and its duration. On the next run a stage is **skipped** when:
 
 1. all of its output files exist, and
-2. the settings it depends on are unchanged (for example, `lyrics` depends on `--whisper-model` and `--language`; `ingest` depends on the input file's sha1 plus `--start` and `--duration`), and
+2. the settings it depends on are unchanged (for example, `lyrics` depends on `--whisper-model`, `--language` and `--no-vocals`; `ingest` depends on the input file's sha1 plus `--start` and `--duration`), and
 3. every upstream stage still has the same run token as when this stage ran.
 
 So changing a setting, or re-running an upstream stage, automatically re-runs exactly the stages
@@ -388,8 +401,10 @@ expected.
 been tested") only concern coremltools' model converters, which aren't used here. The notes stage captures
 them and logs them at debug level.
 
-**Lyrics are `skipped`** when the vocal stem never rises above the activity threshold, as in instrumentals.
-That is intended. If a quiet vocal is missed, look at the vocals lane in `overview.png`.
+**Lyrics are `skipped`** when the vocal stem never rises above the activity threshold, as in instrumentals,
+or when `--no-vocals` is set. That is intended. If a quiet vocal is missed, look at the vocals lane in
+`overview.png`. If Whisper invents lyrics on an instrumental, because a lead synth landed in the vocal stem,
+re-run with `--no-vocals`.
 
 **The analysis looks stale** after you changed code in a stage: the cache only knows about settings, not
 code. Run `--force-stage <stage>` (or `--force`), or bump that stage's `version=` in its `STAGE` record.

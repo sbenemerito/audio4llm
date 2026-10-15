@@ -30,3 +30,13 @@ def test_run_folder_reuses_saved_settings(tmp_path):
     assert cfg.demucs_model == "htdemucs_ft" and cfg.whisper_model == "small" and cfg.plot is False
     assert cfg.language == "en"  # an explicit flag wins
     assert cfg.start == 10.0  # trimming can't change for an existing run folder
+
+
+def test_no_vocals_flag_and_its_undo(tmp_path):
+    assert settings_for(build_parser().parse_args(["x.mp3", "--no-vocals"])).vocals is False
+    assert settings_for(build_parser().parse_args(["x.mp3"])).vocals is True
+    run = tmp_path / "song"
+    (run / "cache").mkdir(parents=True)
+    (run / "cache" / CONFIG_FILE).write_text(json.dumps({"vocals": False}))
+    assert settings_for(build_parser().parse_args([str(run)])).vocals is False  # remembered
+    assert settings_for(build_parser().parse_args([str(run), "--vocals"])).vocals is True  # and undone

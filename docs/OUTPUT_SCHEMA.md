@@ -66,7 +66,8 @@ Top-level keys, in file order:
 | `beat_count`, `bar_count` | int | `len(grid.beats)` and the number of bars numbered 1 and up |
 | `key` | object or null | `{label: "A minor", confidence: 0..1, runner_up: "C major", estimate: true}` |
 | `loudness` | object | `integrated_lufs` (BS.1770), `loudness_range_lu` (EBU R128 LRA, approximated), `peak_dbfs` (sample peak), `rms_dbfs`, `max_momentary_lufs` |
-| `has_vocals` | bool | the vocal stem is clearly audible for at least 1 s |
+| `has_vocals` | bool | the vocal stem is clearly audible for at least 1 s (always false with `--no-vocals`) |
+| `vocals_disabled` | bool | true when the run used `--no-vocals`: no vocal activity, lyrics or vocal notes, even if the vocal stem has sound |
 | `language` | string or null | ISO code from Whisper (detected or `--language`); null when there are no lyrics |
 
 ### `grid`
@@ -164,7 +165,7 @@ drum-less material doesn't turn into phantom kicks.
 | `about` | string | how to read the block |
 | `mix.per_beat` | array of numbers | mix energy 0..1 for each beat in `grid.beats` (same length and order), power-averaged from that beat to the next |
 | `<stem>.per_beat` | array of numbers | the same, for `vocals`, `drums`, `bass` and `other` |
-| `<stem>.active` | array of `{start, end, bar, beat, end_bar, end_beat}` | regions where the stem is clearly audible: within 18 dB of the local mix level and above −60 dBFS, gaps under 0.75 s merged, blips under 0.4 s dropped |
+| `<stem>.active` | array of `{start, end, bar, beat, end_bar, end_beat}` | regions where the stem is clearly audible (`vocals` is always empty with `--no-vocals`): within 18 dB of the local mix level and above −60 dBFS, gaps under 0.75 s merged, blips under 0.4 s dropped |
 | `<stem>.active_fraction` | number | share of the clip the stem is active (0..1) |
 
 `other` is Demucs' catch-all: pads, keys, guitars, synths, effects.
@@ -195,7 +196,7 @@ gating and filtering, are also written to `cache/bass.mid` and `cache/vocals.mid
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `status` | string | `"ok"`, `"skipped"` (no vocals) or `"empty"` (vocals present, but nothing reliable was transcribed) |
+| `status` | string | `"ok"`, `"skipped"` (no vocals detected, or `--no-vocals`) or `"empty"` (vocals present, but nothing reliable was transcribed) |
 | `reason` | string or null | why it is not `ok` (null when it is) |
 | `language` | string or null | ISO code (null when skipped) |
 | `model` | string | Whisper model repo |
@@ -288,6 +289,7 @@ the absolute paths in `source` are shortened. Everything else is verbatim. Regen
       "max_momentary_lufs": -12.2
     },
     "has_vocals": true,
+    "vocals_disabled": false,
     "language": "en"
   },
   "grid": {

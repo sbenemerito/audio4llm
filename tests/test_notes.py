@@ -8,6 +8,7 @@ import numpy as np
 import pytest
 
 from audio4llm import audio
+from audio4llm.config import Config
 from audio4llm.context import RunContext
 from audio4llm.stages import notes
 
@@ -183,6 +184,17 @@ def test_stage_writes_contract_and_skips_vocals(tmp_path, monkeypatch):
     key = d["key"]
     assert set(key) >= {"label", "tonic", "mode", "confidence", "runner_up", "method"}
     assert key["label"] in ("A minor", "C major") and key["method"].startswith("estimate")
+
+
+def test_no_vocals_flag_skips_vocal_transcription(tmp_path, monkeypatch):
+    ctx = _make_run(tmp_path, has_vocals=True)  # vocals detected, but the user says instrumental
+    ctx.config = Config(vocals=False)
+    seen = []
+    monkeypatch.setattr(notes, "transcribe", lambda paths: (seen.append(list(paths)), _fake_transcribe(paths))[1])
+    notes.run(ctx)
+    vox = json.loads(ctx.cache_path("notes.json").read_text())["stems"]["vocals"]
+    assert seen == [["bass"]]
+    assert vox["status"] == "skipped" and "--no-vocals" in vox["reason"] and vox["notes"] == []
 
 
 def test_stage_transcribes_vocals_inside_active_regions(tmp_path, monkeypatch):

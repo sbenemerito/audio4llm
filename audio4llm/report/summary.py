@@ -52,7 +52,10 @@ def render(analysis: dict, curves: dict, name: str) -> str:
     loud = g.get("loudness", {})
     if loud.get("integrated_lufs") is not None:
         head.append(f"{loud['integrated_lufs']:.1f} LUFS")
-    head.append(f"vocals: {'yes' + (' (' + g['language'] + ')' if g.get('language') else '') if g.get('has_vocals') else 'no'}")
+    if g.get("vocals_disabled"):
+        head.append("vocals: off (--no-vocals)")
+    else:
+        head.append(f"vocals: {'yes' + (' (' + g['language'] + ')' if g.get('language') else '') if g.get('has_vocals') else 'no'}")
     L += [" · ".join(head), ""]
     if not g["beat_count"]:
         L += ["No beat was found (no steady pulse), so there is no bar grid; every event is placed in bar 1. "
@@ -86,6 +89,9 @@ def render(analysis: dict, curves: dict, name: str) -> str:
     stems = analysis["stems"]
     for s in STEM_NAMES:
         act = stems[s]["active"]
+        if s == "vocals" and g.get("vocals_disabled"):
+            L.append(f"- **{STEM_LABEL[s]}**: not analysed (--no-vocals); the stem's energy is still in curves.json")
+            continue
         if not act:
             L.append(f"- **{STEM_LABEL[s]}**: not detected")
             continue

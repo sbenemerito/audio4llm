@@ -22,6 +22,8 @@ class Config:
     # ingest
     start: float | None = None  # seconds into the source to start from
     duration: float | None = None  # seconds to keep
+    # vocals: False (--no-vocals) treats the clip as instrumental: no vocal activity, no lyrics, no vocal notes
+    vocals: bool = True
     # stems
     demucs_model: str = "htdemucs"
     # lyrics

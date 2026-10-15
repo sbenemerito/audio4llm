@@ -226,6 +226,17 @@ def test_instrumental_skips_without_loading_model(tmp_path, monkeypatch, energy)
     assert out["model"] == Config().whisper_model
 
 
+def test_no_vocals_flag_skips_before_touching_anything(tmp_path, monkeypatch):
+    monkeypatch.setattr(lyrics, "load_model", _no_model)
+    monkeypatch.setattr(lyrics, "transcribe", _no_model)
+    monkeypatch.setattr(lyrics.audio, "load_mono", _no_model)  # the vocal stem is never even read
+    ctx = RunContext(run_dir=tmp_path / "run", config=Config(vocals=False))  # no energy.json needed either
+    lyrics.run(ctx)
+    out = ctx.read_json("lyrics.json")
+    assert out["status"] == "skipped" and "--no-vocals" in out["reason"]
+    assert out["language"] is None and out["regions"] == [] and out["lines"] == []
+
+
 class FakeModel:
     is_multilingual = True
 
