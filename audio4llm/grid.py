@@ -7,12 +7,19 @@ Conventions used everywhere in the outputs:
   extrapolating the grid backwards, so they can land in bar 0 or below.
 * ``beat`` is 1-based and fractional: 1.0 is the downbeat, 2.5 is the "and"
   after beat 2. The integer part is the beat in the bar, the fraction is the
-  position between that beat and the next one.
+  position between that beat and the next one. Positions within SNAP_BEATS of
+  a 16th-note point are snapped to it (the exact time is always in ``t``).
 """
 
 from __future__ import annotations
 
 import numpy as np
+
+# Event positions within this many beats of a 16th-note grid point are labelled at that point, so an
+# onset detected 10-30 ms off the beat reads "bar 17, beat 1.0" instead of "bar 16, beat 4.97".
+# 0.06 beats is 30 ms at 120 BPM and stays clear of triplet positions (0.083 beats from a 16th).
+SNAP_BEATS = 0.06
+SNAP_GRID = 0.25
 
 
 def snap_downbeats(beats: np.ndarray, downbeats: np.ndarray, tol: float = 0.07) -> np.ndarray:
@@ -78,6 +85,9 @@ class BeatGrid:
     @classmethod
     def from_tracker(cls, beats, downbeats, duration: float | None = None) -> "BeatGrid":
         beats = np.sort(np.asarray(beats, dtype=float))
+        beats = beats[beats >= 0]
+        if duration is not None:  # trackers can emit a beat at the very end of the audio; it has no musical span
+            beats = beats[beats < duration - 0.05]
         raw = snap_downbeats(beats, np.asarray(downbeats, dtype=float))
         bpb = infer_beats_per_bar(raw)
         return cls(beats, regularize_downbeats(raw, len(beats), bpb), bpb, duration)
@@ -110,11 +120,18 @@ class BeatGrid:
     def ibis(self) -> np.ndarray:
         return np.diff(self.beats)
 
+    def local_tempi(self, span: int = 4) -> np.ndarray:
+        """BPM measured over `span`-beat windows (less sensitive to the tracker's frame quantisation than single IBIs)."""
+        b = self.beats
+        span = min(span, len(b) - 1)
+        if span < 1:
+            return np.zeros(0)
+        return 60.0 * span / (b[span:] - b[:-span])
+
     @property
     def tempo_bpm(self) -> float | None:
-        if len(self.beats) < 2:
-            return None
-        return float(60.0 / np.median(self.ibis))
+        tempi = self.local_tempi()
+        return float(np.median(tempi)) if len(tempi) else None
 
     def _edge_ibi(self, at_start: bool) -> float:
         ib = self.ibis
@@ -191,6 +208,9 @@ class BeatGrid:
         if len(self.beats) == 0:
             return 1, 1.0
         x = self.beat_position(float(t))
+        q = round(x / SNAP_GRID) * SNAP_GRID
+        if abs(x - q) <= SNAP_BEATS:
+            x = q
         j = int(np.floor(x + 1e-9))
         frac = min(max(x - j, 0.0), 0.99)
         bar, pos = self._label(j)
